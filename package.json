@@ -1,0 +1,64 @@
+{
+  "name": "crawldex-report",
+  "version": "0.3.0",
+  "description": "CrawlDex JavaScript reporter SDK for preflight checks and redacted outcome reports.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crawldex/crawldex-report-js.git"
+  },
+  "homepage": "https://github.com/crawldex/crawldex-report-js#readme",
+  "bugs": {
+    "url": "https://github.com/crawldex/crawldex-report-js/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./playwright": {
+      "types": "./dist/adapters/playwright.d.ts",
+      "import": "./dist/adapters/playwright.js"
+    },
+    "./stagehand": {
+      "types": "./dist/adapters/stagehand.d.ts",
+      "import": "./dist/adapters/stagehand.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "package.json"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "npm run build",
+    "pack:dry-run": "npm pack --dry-run"
+  },
+  "keywords": [
+    "crawldex",
+    "reporter",
+    "preflight",
+    "playwright",
+    "stagehand"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
+  }
+}
