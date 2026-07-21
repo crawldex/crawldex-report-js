@@ -93,6 +93,8 @@ export interface OutcomeInput extends AttemptInput {
   echo_action?: CrawlDexEchoAction;
   taskAttempted?: boolean;
   task_attempted?: boolean;
+  removedInBatch?: boolean;
+  removed_in_batch?: boolean;
   friction?: string[];
   steps?: number;
   durationSec?: number;
@@ -135,6 +137,7 @@ export interface ReporterMetadataInput {
 export interface RunReportPayload {
   site: string;
   task: string;
+  record_id?: string;
   agent_profile?: {
     stack?: string;
     model?: string;
@@ -217,6 +220,7 @@ export interface DecisionEchoPayload {
   record_id: string;
   action_taken: CrawlDexEchoAction;
   task_attempted: boolean;
+  removed_in_batch?: boolean;
 }
 
 export interface ConfidenceSummary {
@@ -365,7 +369,7 @@ export interface CrawlDexReporter {
   preflight(site: string, task: string, agentProfile?: AgentProfileInput): Promise<PreflightVerdict>;
   preflight(input: PreflightInput): Promise<PreflightVerdict>;
   trustRecord(site: string, task?: string | null): Promise<TrustRecordResult>;
-  echo(recordId: string, action: CrawlDexEchoAction, taskAttempted?: boolean): Promise<EchoResult>;
+  echo(recordId: string, action: CrawlDexEchoAction, taskAttempted?: boolean, removedInBatch?: boolean): Promise<EchoResult>;
   report(input: OutcomeInput): Promise<ReportResult>;
   reportOutcome(input: OutcomeInput): Promise<ReportResult>;
   mapToRunReport(input: OutcomeInput): RunReportPayload;
@@ -528,8 +532,8 @@ export function createReporter(options: ReporterOptions = {}): CrawlDexReporter 
     }
   }
 
-  async function echo(recordId: string, action: CrawlDexEchoAction, taskAttempted = true): Promise<EchoResult> {
-    const payload = buildEchoPayload(recordId, action, taskAttempted);
+  async function echo(recordId: string, action: CrawlDexEchoAction, taskAttempted = true, removedInBatch?: boolean): Promise<EchoResult> {
+    const payload = buildEchoPayload(recordId, action, taskAttempted, removedInBatch);
     const echoEndpoint = echoEndpoints[0] ?? "";
 
     if (dryRun) {
@@ -571,7 +575,7 @@ export function createReporter(options: ReporterOptions = {}): CrawlDexReporter 
       return;
     }
 
-    const recordId = chooseAlias<string>(input, "recordId", "record_id");
+    const recordId = receipt.payload.record_id;
     if (!recordId) {
       return;
     }
@@ -580,7 +584,8 @@ export function createReporter(options: ReporterOptions = {}): CrawlDexReporter 
       await echo(
         recordId,
         chooseAlias<CrawlDexEchoAction>(input, "echoAction", "echo_action") ?? "followed",
-        chooseAlias<boolean>(input, "taskAttempted", "task_attempted") ?? true
+        chooseAlias<boolean>(input, "taskAttempted", "task_attempted") ?? true,
+        chooseAlias<boolean>(input, "removedInBatch", "removed_in_batch")
       );
     } catch (error) {
       logger.warn(`CrawlDex autoReport echo skipped: ${errorSummary(error)}.`);
@@ -605,8 +610,8 @@ export async function trustRecord(site: string, task?: string | null, options?: 
   return createReporter(options).trustRecord(site, task);
 }
 
-export async function echo(recordId: string, action: CrawlDexEchoAction, options?: ReporterOptions & { taskAttempted?: boolean }): Promise<EchoResult> {
-  return createReporter(options).echo(recordId, action, options?.taskAttempted);
+export async function echo(recordId: string, action: CrawlDexEchoAction, options?: ReporterOptions & { taskAttempted?: boolean; removedInBatch?: boolean }): Promise<EchoResult> {
+  return createReporter(options).echo(recordId, action, options?.taskAttempted, options?.removedInBatch);
 }
 
 export function mapToRunReport(input: OutcomeInput): RunReportPayload {
@@ -615,6 +620,11 @@ export function mapToRunReport(input: OutcomeInput): RunReportPayload {
     task: validateText("task", redactString(input.task), 160),
     outcome: validateEnum("outcome", input.outcome, CRAWLDEX_OUTCOMES)
   };
+
+  const recordId = chooseAlias<string>(input, "recordId", "record_id");
+  if (recordId !== undefined) {
+    payload.record_id = validateRecordId(recordId);
+  }
 
   const agentProfile = mapAgentProfile(chooseAlias<AgentProfileInput>(input, "agentProfile", "agent_profile"));
   if (agentProfile) {
@@ -1396,16 +1406,27 @@ function dryRunReceipt(payload: RunReportPayload, endpoint: string): SubmissionR
   };
 }
 
-function buildEchoPayload(recordId: string, action: CrawlDexEchoAction, taskAttempted: boolean): DecisionEchoPayload {
+function buildEchoPayload(recordId: string, action: CrawlDexEchoAction, taskAttempted: boolean, removedInBatch?: boolean): DecisionEchoPayload {
+  if (removedInBatch !== undefined && typeof removedInBatch !== "boolean") {
+    throw new Error("removedInBatch must be a boolean when provided.");
+  }
+  const payload: DecisionEchoPayload = {
+    record_id: validateRecordId(recordId),
+    action_taken: validateEnum("action", action, CRAWLDEX_ECHO_ACTIONS),
+    task_attempted: Boolean(taskAttempted)
+  };
+  if (removedInBatch !== undefined) {
+    payload.removed_in_batch = removedInBatch;
+  }
+  return payload;
+}
+
+function validateRecordId(recordId: string): string {
   const cleanRecordId = validateText("recordId", recordId, 128);
   if (!ECHO_RECORD_ID_PATTERN.test(cleanRecordId)) {
     throw new Error("recordId must be an Agent Trust Record id like atr_0123456789abcdef.");
   }
-  return {
-    record_id: cleanRecordId,
-    action_taken: validateEnum("action", action, CRAWLDEX_ECHO_ACTIONS),
-    task_attempted: Boolean(taskAttempted)
-  };
+  return cleanRecordId;
 }
 
 function skippedEcho(warning: string, endpoint: string, payload: DecisionEchoPayload | null): SkippedEchoReceipt {

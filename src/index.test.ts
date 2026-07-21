@@ -36,6 +36,7 @@ describe("crawldex-report JavaScript SDK", () => {
     const payload = mapToRunReport({
       site: "demo-shop.crawldex.com",
       task: "commerce.checkout",
+      recordId: "atr_0123456789abcdef",
       agentProfile: {
         stack: "playwright",
         browserRuntime: "chromium",
@@ -64,6 +65,7 @@ describe("crawldex-report JavaScript SDK", () => {
     expect(payload).toMatchObject({
       site: "demo-shop.crawldex.com",
       task: "commerce.checkout",
+      record_id: "atr_0123456789abcdef",
       agent_profile: {
         stack: "playwright",
         browser_runtime: "chromium",
@@ -91,6 +93,23 @@ describe("crawldex-report JavaScript SDK", () => {
     expect(JSON.stringify(payload)).not.toContain("checkout_loaded");
     expect(JSON.stringify(payload)).not.toContain("secret");
     expect(JSON.stringify(payload)).not.toContain("jane@example.com");
+  });
+
+  it("rejects invalid or conflicting ATR record IDs before submission", () => {
+    expect(() => mapToRunReport({
+      site: "example.com",
+      task: "subscriptions.cancel",
+      outcome: "blocked",
+      record_id: "private-account-reference"
+    })).toThrow("recordId must be an Agent Trust Record id");
+
+    expect(() => mapToRunReport({
+      site: "example.com",
+      task: "subscriptions.cancel",
+      outcome: "blocked",
+      recordId: "atr_0123456789abcdef",
+      record_id: "atr_fedcba9876543210"
+    })).toThrow("Conflicting values supplied for recordId and record_id");
   });
 
   it("fails open for preflight and report network errors", async () => {
@@ -323,7 +342,8 @@ describe("crawldex-report JavaScript SDK", () => {
       expect(JSON.parse(init.body as string)).toEqual({
         record_id: "atr_0123456789abcdef",
         action_taken: "overrode",
-        task_attempted: false
+        task_attempted: false,
+        removed_in_batch: true
       });
       return jsonResponse({ status: "accepted" }, 202);
     });
@@ -331,6 +351,7 @@ describe("crawldex-report JavaScript SDK", () => {
     await expect(echo("atr_0123456789abcdef", "overrode", {
       apiOrigin: "https://crawldex.test",
       taskAttempted: false,
+      removedInBatch: true,
       fetch: fetchMock as never,
       logger: { warn: vi.fn() }
     })).resolves.toMatchObject({
@@ -338,6 +359,18 @@ describe("crawldex-report JavaScript SDK", () => {
       endpoint: "https://crawldex.test/api/v1/echo"
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a non-boolean batch-removal signal before sending", async () => {
+    const fetchMock = vi.fn();
+
+    await expect(echo("atr_0123456789abcdef", "followed", {
+      apiOrigin: "https://crawldex.test",
+      removedInBatch: "private reason" as unknown as boolean,
+      fetch: fetchMock as never,
+      logger: { warn: vi.fn() }
+    })).rejects.toThrow("removedInBatch must be a boolean");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("persists anonymous instance IDs across SDK calls", async () => {
@@ -433,6 +466,9 @@ describe("crawldex-report JavaScript SDK", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://crawldex.test/api/v1/runs");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      record_id: "atr_0123456789abcdef"
+    });
   });
 
   it("autoReport emits echo after submitting a redacted outcome report", async () => {
@@ -456,6 +492,7 @@ describe("crawldex-report JavaScript SDK", () => {
       task: "subscriptions.cancel",
       outcome: "success_with_handoff",
       record_id: "atr_0123456789abcdef",
+      removedInBatch: true,
       evidence: {
         artifact: {
           url: "https://example.com/account?token=secret",
@@ -471,6 +508,7 @@ describe("crawldex-report JavaScript SDK", () => {
     const echoBody = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://crawldex.test/api/v1/runs");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://crawldex.test/api/v1/echo");
+    expect(reportBody.record_id).toBe("atr_0123456789abcdef");
     expect(JSON.stringify(reportBody)).toContain("sha256:");
     expect(JSON.stringify(reportBody)).not.toContain("jane@example.com");
     expect(JSON.stringify(reportBody)).not.toContain("secret-token");
@@ -478,7 +516,8 @@ describe("crawldex-report JavaScript SDK", () => {
     expect(echoBody).toEqual({
       record_id: "atr_0123456789abcdef",
       action_taken: "followed",
-      task_attempted: true
+      task_attempted: true,
+      removed_in_batch: true
     });
   });
 
