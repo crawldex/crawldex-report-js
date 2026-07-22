@@ -551,7 +551,7 @@ export function createReporter(options: ReporterOptions = {}): CrawlDexReporter 
     try {
       const { response, endpoint } = await fetchWithFallback(fetchImpl, echoEndpoints, {
         method: "POST",
-        headers: buildHeaders(undefined, undefined),
+        headers: buildHeaders(agentKey, undefined),
         body: JSON.stringify(payload)
       }, echoTimeoutMs);
 

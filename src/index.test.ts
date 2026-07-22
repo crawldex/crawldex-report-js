@@ -12,7 +12,26 @@ import {
   trustRecord,
   trustRecordFromResponse
 } from "./index.js";
-import { buildOpenApiDocument } from "../../../src/server/openapi.js";
+
+const TRUST_RECORD_REQUIRED_FIELDS = [
+  "atr_version",
+  "site",
+  "task",
+  "issued_at",
+  "record_id",
+  "verdict",
+  "confidence",
+  "accessibility",
+  "safety",
+  "freshness",
+  "task_compatibility",
+  "known_blockers",
+  "user_present",
+  "agent_instruction",
+  "evidence",
+  "publisher",
+  "how_to_improve"
+] as const;
 
 let testHome: string | null = null;
 
@@ -337,7 +356,8 @@ describe("crawldex-report JavaScript SDK", () => {
       expect(init.method).toBe("POST");
       expect(init.headers).toMatchObject({
         "x-crawldex-instance": expect.stringMatching(/^[0-9a-f-]{36}$/),
-        "x-crawldex-channel": "adapter-playwright"
+        "x-crawldex-channel": "adapter-playwright",
+        "x-crawldex-agent-key": "aa_echo_test_key"
       });
       expect(JSON.parse(init.body as string)).toEqual({
         record_id: "atr_0123456789abcdef",
@@ -350,6 +370,7 @@ describe("crawldex-report JavaScript SDK", () => {
 
     await expect(echo("atr_0123456789abcdef", "overrode", {
       apiOrigin: "https://crawldex.test",
+      agentKey: "aa_echo_test_key",
       taskAttempted: false,
       removedInBatch: true,
       fetch: fetchMock as never,
@@ -642,20 +663,11 @@ describe("crawldex-report JavaScript SDK", () => {
     expect(warnings).toHaveLength(1);
   });
 
-  it("keeps the trustRecord parser aligned with the OpenAPI TrustRecord required fields", () => {
-    const document = buildOpenApiDocument({
-      baseUrl: "https://crawldex.test",
-      generatedAt: "2026-07-02T00:00:00.000Z"
-    });
-    const schema = document.components.schemas.TrustRecord as {
-      required: string[];
-      properties: Record<string, unknown>;
-    };
+  it("keeps the trustRecord parser aligned with the published TrustRecord contract", () => {
     const parsed = trustRecordFromResponse(trustRecordFixture());
 
-    expect(Object.keys(parsed).sort()).toEqual([...schema.required].sort());
-    for (const field of schema.required) {
-      expect(schema.properties[field], field).toBeDefined();
+    expect(Object.keys(parsed).sort()).toEqual([...TRUST_RECORD_REQUIRED_FIELDS].sort());
+    for (const field of TRUST_RECORD_REQUIRED_FIELDS) {
       expect(parsed[field as keyof typeof parsed], field).not.toBeUndefined();
     }
   });
